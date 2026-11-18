@@ -26,3 +26,15 @@ class RunInput(BaseModel):
  name:str=Field(min_length=2,max_length=120)
  mapping_id:int
 class RestoreInput(BaseModel):backup:dict
+class SubscriptionInput(BaseModel):
+ name:str=Field(min_length=2,max_length=120)
+ downstream:str=Field(min_length=2,max_length=120)
+ retention_limit:int=Field(default=200,ge=1,le=100000)
+ note:str=Field(default='',max_length=500)
+class BatchAck(BaseModel):
+ batch_id:int
+ checksum:str=Field(min_length=64,max_length=64)
+class ReclaimInput(BaseModel):
+ retention_limit:int|None=Field(default=None,ge=1,le=100000)
+class RebuildInput(BaseModel):
+ reason:str=Field(default='manual_rebuild')

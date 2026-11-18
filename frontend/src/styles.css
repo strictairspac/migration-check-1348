@@ -7,3 +7,11 @@
 .evidence p{overflow-wrap:anywhere}
 
 .workspace{background-image:none}.sidebar{background:oklch(27% .035 155)}.sidebar nav button.active{background:oklch(35% .04 155);border-color:oklch(79% .07 90)}.login-art{background:oklch(30% .045 155)}.login-art p{color:oklch(84% .035 115)}.postal-mark{border:3px double oklch(80% .04 100);color:oklch(85% .04 100);display:inline-block;padding:22px 35px;transform:rotate(-7deg);font-size:15px;line-height:2;letter-spacing:4px;margin-top:30px}.postal-mark b{font-weight:400;font-size:22px;display:block}.postal-mark span{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:2px}.page-title{border-bottom:1px dashed var(--line);margin-bottom:25px}.evidence pre{background:oklch(89% .018 110)}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}.status.cancelled{background:oklch(85% .02 90);color:var(--muted)}.evidence table{table-layout:fixed}.evidence td,.evidence th{overflow-wrap:anywhere}.evidence td:first-child{width:15%}.evidence td details pre{max-height:300px}.split code{overflow-wrap:anywhere}.evidence p{overflow-wrap:anywhere}#target-data{max-height:300px}.evidence button[data-restore]{margin-top:15px}@media(max-width:767px){.postal-mark{display:none}}
+
+/* 下游接库：全量抄录进度条与批次操作区 */
+.snap-progress{position:relative;background:oklch(88% .025 110);height:34px;margin:6px 0 4px;overflow:hidden}
+.snap-progress>div{position:absolute;inset:0 auto 0 0;background:oklch(60% .09 150);transition:width .4s cubic-bezier(.16,1,.3,1)}
+.snap-progress small{position:relative;z-index:2;display:block;padding:9px 10px;color:var(--ink);font-family:'Space Mono',monospace;font-size:10px;line-height:1.4}
+.sub-actions{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.sub-actions button{width:100%;text-align:center;padding:9px 12px}
+.sub-actions pre{max-height:240px;margin-top:6px}

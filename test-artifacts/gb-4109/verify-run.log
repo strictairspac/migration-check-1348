@@ -1,0 +1,68 @@
+
+== 准备：第一次迁移 250 行（跨多批，SNAPSHOT_PAGE=100） ==
+  PASS 迁移登记250条变更事件 
+  PASS 变更序连续无缺口 1..250 
+  PASS target_rows 全部回填 born_seq 
+
+== A. 建单水位 + 全量分批，期间并发新迁移不进全量 ==
+  PASS 建单状态 snapshotting、水位=250 
+  PASS 并发迁移照常落库（280目标行/280事件） 
+  PASS 全量分3批（100/100/50） 
+  PASS 全量250行且无重复 
+  PASS 全量只含水位前 run1 的行 
+  PASS 全量完成自动切 streaming 
+  PASS 主单全量下游落库250行 
+
+== A2. 主单增量先追平并发迁移 seq251..280 ==
+  PASS 增量首批交付并发迁移30条 seq251..280 
+  PASS 增量事件按 seq 升序 
+  PASS 增量30条落库，下游累计280行 
+  PASS 回执后游标推进到280 
+
+== D. 回收上限 + 慢消费者追不上提示重建，禁止跳过缺口 ==
+  PASS 回收按最小上限cap=3执行 
+  PASS 慢单全量仍完成250行（全量不依赖事件留存） 
+  PASS 慢单 retained_from 被回收推进到278 
+  PASS 缺口返回409且明确不能跳过 
+  PASS 接库单标记 rebuild_required + 原因 gap_detected 
+  PASS 重建原因写入历史留痕 
+  PASS 需重建状态拒绝继续收数（不能跳过缺口） 
+
+== E. 重建：清空下游、按新水位重新全量 ==
+  PASS 重建清空下游库/去重账本/交付批次 
+  PASS 重建状态 rebuilding 且清空旧原因 
+  PASS 重建水位刷新到最新280 
+  PASS 重建后重新抄全量280行 
+  PASS 重建全量完成回到 streaming 
+  PASS 重建历史含 gap + manual 两次 
+
+== B. 同值恢复也算一次变更，增量连续交付 ==
+  PASS 同值恢复仍产生250条 restore 事件 seq281..530 
+  PASS 恢复事件 kind=restore 
+  PASS 增量连续交付 restore 事件 seq281..530 
+  PASS 同值恢复内容哈希与迁移时该行一致 
+  PASS 恢复事件落库为同键覆盖，下游仍280行 
+  PASS 无新变更时增量返回空并给出 next_seq=531 
+
+== C. 回执丢失重试：重投同一批次，不重复入库 ==
+  PASS 新批次 seq531..535 
+  PASS 校验和不一致拒绝落库(422) 
+  PASS 首次落库应用5条 
+  PASS 重试重投同一批次（batch_id/checksum 不变） 
+  PASS 重投 attempts 累加 
+  PASS 重试落库5条全部去重跳过，不重复入库 
+  PASS 回执成功推进游标到535 
+  PASS 重复回执幂等不重复推进 
+  PASS 下游库最终285行（280+5，无重复） 
+
+== F. 权限、校验与边界 ==
+  PASS viewer 禁止建单(403) 
+  PASS viewer 禁止落库(403) 
+  PASS viewer 可只读查看接库单 
+  PASS 保留上限越界被拒(422) 
+  PASS 无令牌拒绝(401) 
+  PASS 已关闭接库单拒绝重建(409) 
+  PASS 关闭后拒绝拉取(409) 
+
+结果：通过 49 项，失败 0 项
+全部断言通过

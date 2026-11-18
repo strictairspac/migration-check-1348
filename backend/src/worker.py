@@ -6,6 +6,7 @@ from src.models.batch import Batch
 from src.models.mapping import Mapping
 from src.models.run import Run,TargetRow
 from src.services.migration import migrate,make_backup,key_digest,Cancelled
+from src.services import changes
 from src.services.audit import log
 q=redis.Redis.from_url(REDIS_URL)
 def progress(run_id,info):
@@ -30,7 +31,13 @@ while True:
    with Session() as s:
     r=s.query(Run).filter_by(id=run_id).with_for_update().first()
     if r.cancel_requested:raise Cancelled()
-    for i,row in enumerate(result['accepted_rows']):s.add(TargetRow(run_id=run_id,ordinal=i,key_digest=key_digest(row),payload=row))
+    new_rows=[]
+    for i,row in enumerate(result['accepted_rows']):
+     tr=TargetRow(run_id=run_id,ordinal=i,key_digest=key_digest(row),payload=row)
+     s.add(tr);new_rows.append(tr)
+    s.flush()
+    # 与目标行同一事务顺序登记变更，提交顺序即下游交付顺序
+    result['change_range']=changes.record_target_changes(s,run_id,new_rows,'upsert')
     r.result=result;r.status='completed';s.commit()
    log('worker','run.completed',str(run_id))
   except Cancelled:

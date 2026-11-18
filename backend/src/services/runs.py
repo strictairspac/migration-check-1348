@@ -8,6 +8,7 @@ from src.models.mapping import Mapping
 from src.models.run import Run,TargetRow
 from src.utils.serialization import record
 from src.services.migration import digest,key_digest,validate_backup
+from src.services import changes
 queue=redis.Redis.from_url(REDIS_URL)
 def list_items():
  with Session() as s:return [record(r) for r in s.query(Run).order_by(Run.id.desc()).limit(100).all()]
@@ -53,9 +54,15 @@ def restore(item_id,data):
   except ValueError as e:raise HTTPException(422,str(e))
   before=s.query(TargetRow).filter_by(run_id=item_id).count()
   s.query(TargetRow).filter_by(run_id=item_id).delete()
-  for i,row in enumerate(rows):s.add(TargetRow(run_id=item_id,ordinal=i,key_digest=key_digest(row),payload=row))
   s.flush()
+  restored=[]
+  for i,row in enumerate(rows):
+   tr=TargetRow(run_id=item_id,ordinal=i,key_digest=key_digest(row),payload=row)
+   s.add(tr);restored.append(tr)
+  s.flush()
+  # 备份恢复即使逐行同值也登记一次restore变更，按提交顺序交付下游
+  change_range=changes.record_target_changes(s,item_id,restored,'restore')
   actual=[x.payload for x in s.query(TargetRow).filter_by(run_id=item_id).order_by(TargetRow.ordinal)]
-  proof={'restored_at':datetime.now(timezone.utc).isoformat(),'previous_count':before,'restored_count':len(actual),'checksum':digest(actual),'verified':digest(actual)==r.result['checksum']}
+  proof={'restored_at':datetime.now(timezone.utc).isoformat(),'previous_count':before,'restored_count':len(actual),'checksum':digest(actual),'verified':digest(actual)==r.result['checksum'],'change_range':change_range}
   if not proof['verified']:raise HTTPException(409,'恢复后校验失败，已回滚')
   r.recovery=(r.recovery or [])+[proof];s.commit();return proof

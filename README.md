@@ -5,7 +5,7 @@
 ## 场景与业务
 上游实验室交付旧字段JSON检验记录；过去人工改字段名、复制到新表并凭总行数判断成功。痛点：非法数值默默丢失、重复委托号覆盖、备份无法证明能恢复。本站登记原始行，字段映射规定类型和必填，Python逐块转换并保留拒绝原行，真实PG目标表一次提交。下游质量复核人下载对账凭据，管理员用JSON逻辑备份恢复本次运行目标并核验。
 
-四业务页：源批次、字段映射、迁移执行（可取消）、差异核对（拒绝区/目标行/备份）；管理员另有审计和回传恢复。三核心实体batches/mappings/runs，另target_rows持久化目标行。全部实体按模型/schema/service/controller/routes/前端api/store/page贯穿。
+四业务页：源批次、字段映射、迁移执行（可取消）、差异核对（拒绝区/目标行/备份）；第五页下游接库（全量分批+增量连续序）；管理员另有审计和回传恢复。三核心实体batches/mappings/runs，另target_rows持久化目标行，change_events/subscriptions/delivery_batches/downstream_rows/applied_events支撑下游交接。全部实体按模型/schema/service/controller/routes/前端api/store/page贯穿。
 
 ## 启动与账号
 ```sh
@@ -42,6 +42,16 @@ seed含三账号、三批次（三种正常/异常/空输入）、三映射。�
 
 下载备份为本工具目标行的逻辑JSON快照(version1)，含run_id/rows/row_hashes/checksum，不是pg_dump或物理备份，不含WAL/索引/权限。管理员恢复只允许该运行已保存checksum完全匹配的备份；先核验逐行/总体摘要、schema和自然键，再事务性替换该运行target_rows，回读重新计算摘要并保存recovery记录。篡改、错运行、未完成运行拒绝，恢复事务回滚；不能用任意新数据覆盖目标。
 
+## 下游接库：先全量后增量，缺口不跳过
+下游检验库通过“接库单(subscriptions)”接入，全程不长占事务。
+- **接库水位**：建单时冻结当前变更序`snapshot_seq`。全量只交`born_seq<=水位`的目标行，建单之后的落库一律走增量；抄库期间迁移与备份恢复照常并发提交，互不阻塞。
+- **全量分批**：keyset分页（每批100行，独立短事务），逐批生成带checksum的交付批次，下游幂等落库并回执；全量交完自动切到`streaming`。
+- **变更序连续**：迁移提交(`upsert`)与备份恢复(`restore`，即使逐行同值也算一次)在同一事务内对`change_meta`锁行顺序取号，提交顺序即交付顺序，`change_events.seq`连续无缺口。
+- **回执丢失不重复入库**：未回执的开放批次会被原样重投（`batch_no`/`checksum`不变、`attempts`累加）；下游以自然键`(subscription_id,key_digest)`幂等upsert，并以事件seq在`applied_events`去重，重试只跳过不重复写入。ack后才推进增量游标，重复ack幂等。
+- **可设上限回收**：每个接库单有`retention_limit`，回收按所有活跃接库单最小上限全局裁剪`change_events`，保证任何单子都不会被跳过缺口。
+- **追不上即重建**：下游需要的序号已被回收（出现缺口）时，拉取返回409并把接库单置为`rebuild_required`、记录`gap_detected`原因，禁止跳过缺口继续收；重建清空该单下游库与去重账本，按最新水位重新抄全量。重建原因与历史在接库页可见。
+- 页面可看每条接库单的全量进度条、增量游标、最早保留序、保留上限、下游库行数与重建原因。
+
 受控场景演示旧字段到新目标结构的逻辑迁移，数据库真实保存源/映射/目标/对账。不能连接远端数据库，不宣称生产异构迁移或灾备能力。
 
 ## 工程与开发
@@ -49,4 +59,4 @@ Python3.11/FastAPI/SQLAlchemy/psycopg/Redis/PostgreSQL16，原生HTML/CSS/JS，n
 
 backend/src按models/schemas/services/controllers/routes/middlewares/config/constants/utils；backend/scripts/seed_demo.py；backend/migrations记录元数据版本。frontend/src按api/stores/pages/components/common/hooks/router/types/constants/utils；共享table/status/feedback；forms/poll hooks。角色/状态/类型枚举在backend/src/constants/enums.py与frontend/src/constants/enums.js。墨绿邮政凭单视觉，Noto Sans SC/Space Mono双字体来自Google Fonts，离线回退；桌面/平板/手机响应。
 
-.env.example定义COMPOSE_PROJECT_NAME/三端口/JWT_SECRET/SEED_DEMO；DATABASE_URL/REDIS_URL由Compose注入。启动SEED_DEMO失败只记日志。本地开发pip install -r backend/requirements.txt，设数据库/Redis/JWT环境变量，在backend运行uvicorn src.main:app --reload；前端需/api代理，不能file://。测试/截图/日志放批次test-artifacts/gb-4109，源码不混入。MIT License。
+.env.example定义COMPOSE_PROJECT_NAME/三端口/JWT_SECRET/SEED_DEMO；DATABASE_URL/REDIS_URL由Compose注入。启动SEED_DEMO失败只记日志。本地开发pip install -r backend/requirements.txt，设数据库/Redis/JWT环境变量，在backend运行uvicorn src.main:app --reload；前端需/api代理，不能file://。下游接库的端到端验证脚本在test-artifacts/gb-4109/verify_handover.py（本地无PostgreSQL/Redis时以SQLite+WAL等价运行，生产仍为PostgreSQL行级锁+Redis队列），覆盖全量交接、回执丢失重试、回收缺口重建三类竞争。测试/截图/日志放批次test-artifacts/gb-4109，源码不混入。MIT License。

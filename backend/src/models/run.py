@@ -22,3 +22,5 @@ class TargetRow(Base):
  ordinal=Column(Integer,nullable=False)
  key_digest=Column(String(64),nullable=False)
  payload=Column(JSON,nullable=False)
+ # 该行最后一次落库（迁移或恢复）对应的变更序，供全量接库按水位截取
+ born_seq=Column(Integer,nullable=False,default=0)
